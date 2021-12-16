@@ -29,37 +29,44 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--target_landmark',default='eye',type=str)
 args  = parser.parse_args()
 
-def match_img(img_face,img_manga,descriptor='SIFT'):
+def get_des(descriptor):
     if(descriptor == 'ORB'):
-        des1 = cv2.ORB_create(nfeatures=2000)
-        des2 = cv2.ORB_create(nfeatures=300)
+        return cv2.ORB_create(nfeatures=500,scaleFactor=1.1)
     elif(descriptor =='SIFT'):
-        des1 = cv2.SIFT_create(nfeatures=2000)
-        des2 = cv2.SIFT_create(nfeatures=300)
+        return cv2.SIFT_create(nfeatures=500)
+    elif (descriptor == 'KAZE'):
+        return cv2.KAZE_create()
+    elif (descriptor == 'BRISK'):
+        return cv2.BRISK_create()
+    elif (descriptor == 'AKAZE'):
+        return cv2.AKAZE_create()
     else:
         raise NotImplementedError("not implemented descriptor {}".format(descriptor))
-    height = img_face.shape[0]
-    width = img_face.shape[1]
+
+def match_img(img_face,kp_real, des_real,img_manga,kp_manga, des_manga,descriptor='SIFT'):
+    des2 = get_des(descriptor)
     face_color = img_face[5, 5, :]
+
     gray = cv2.cvtColor(img_face, cv2.COLOR_BGR2GRAY)
-    kp_real, des_real = des1.detectAndCompute(img_face, None)
+    # kp_real, des_real = des1.detectAndCompute(gray, None)
     img_face_keypoint = cv2.drawKeypoints(gray, kp_real, None)
     if (show):
-        cv2.imshow('key_real', img_face_keypoint)
-    img_manga = img_manga[350:350 + height, 300:300 + width, :]
-    for x in range(height):
-        for y in range(width):
+        cv2.imshow('key_real_{}'.format(descriptor), img_face_keypoint)
+
+
+    for x in range(img_manga.shape[0]):
+        for y in range(img_manga.shape[1]):
             if (img_manga[x, y, :] == [102, 102, 102]).all():
                 img_manga[x, y, :] = face_color
 
-    gray_mangga = cv2.cvtColor(img_manga, cv2.COLOR_BGR2GRAY)
+    # gray_mangga = cv2.cvtColor(img_manga, cv2.COLOR_BGR2GRAY)
 
     # cv2.imshow('rgb_manga',img_manga)
-    kp_manga, des_manga = des2.detectAndCompute(gray_mangga, None)
-
+    # kp_manga, des_manga = des2.detectAndCompute(gray_mangga, None)
+    # print(len(kp_real),len(kp_manga))
     img = cv2.drawKeypoints(img_manga, kp_manga, None)
     if (show):
-        cv2.imshow('key_manga', img)
+        cv2.imshow('{}'.format(descriptor), img)
         cv2.waitKey(0)
 
     ##  do match
@@ -78,7 +85,7 @@ def match_img(img_face,img_manga,descriptor='SIFT'):
 
     ## distance很重要
     for m, n in matches:
-        if (m.distance < 0.75 * n.distance):
+        if (m.distance < 0.8 * n.distance):
             goodMatch.append(m)
     goodMatch = np.expand_dims(goodMatch, 1)
     res = len(goodMatch)
@@ -109,7 +116,7 @@ if __name__ == "__main__":
     match_dir = './match_{}/'.format(target_landmark)
     # print(img.shape)
     # SIFT = cv2.ORB_create(nfeatures=2000)
-
+    manga_dict = {}
     for rooot, diiirs, face_files in os.walk(face_dir):
         for face_file in face_files:
             if(not face_file.endswith('jpg')):
@@ -120,7 +127,9 @@ if __name__ == "__main__":
             face_path = os.path.join(face_dir,face_file)
             img_face = cv2.imread(face_path)
             img_face_base = img_face
-
+            gray = cv2.cvtColor(img_face, cv2.COLOR_BGR2GRAY)
+            # descriptors=['SIFT','ORB','KAZE','BRISK','AKAZE']
+            des_dict = {}
             # # Print
             # img2 = cv2.drawKeypoints(gray,kp,img_face)
             res_best = 0.0
@@ -130,16 +139,43 @@ if __name__ == "__main__":
                 for file in files:
                     if(not file.endswith('.png')):
                         continue
-
+                    manga_id = args.target_landmark + '_{}'.format(file.rstrip('.png'))
                     ##  take SIFT feature of manga landmark
                     file_path = os.path.join(base_dir,file)
                     # img_landmark = dlib.load_rgb_image(file_path)
                     img_manga = cv2.imread(os.path.join(base_dir,file))
                     img_manga_base = copy.deepcopy(img_manga)
-                    descriptors=['SIFT','ORB']
+                    img_manga = img_manga[300:800,300:600,:]
+
+
                     res = 0
+                    descriptors = ['SIFT', 'ORB']
+
                     for des in descriptors:
-                        res += match_img(img_face,img_manga,des)
+                        if(des not in des_dict.keys()):
+                            des1 = get_des(des)
+                            kp_real, des_real = des1.detectAndCompute(gray, None)
+                            des_dict[des]= {
+                                'kp':kp_real,
+                                'des':des_real
+                            }
+                        else:
+                            kp_real, des_real = des_dict[des]['kp'] , des_dict[des]['des']
+                        if(manga_id not in manga_dict.keys()):
+                            manga_dict[manga_id] = {}
+                        if(des not in manga_dict[manga_id].keys()):
+                            gray_mangga = cv2.cvtColor(img_manga, cv2.COLOR_BGR2GRAY)
+                            des2 = get_des(des)
+                            # cv2.imshow('rgb_manga',img_manga)
+                            kp_manga, des_manga = des2.detectAndCompute(gray_mangga, None)
+                            manga_dict[manga_id][des]={
+                                'kp':kp_manga,
+                                'des':des_manga
+                            }
+                        else:
+                            kp_manga, des_manga = manga_dict[manga_id][des]['kp'], manga_dict[manga_id][des]['des']
+
+                        res += match_img(img_face,kp_real, des_real,img_manga,kp_manga, des_manga,des)
 
                     if(res_best<res):
                         res_best=res
