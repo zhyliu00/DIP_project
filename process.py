@@ -92,19 +92,41 @@ def match_img(img_face,kp_real, des_real,img_manga,kp_manga, des_manga,descripto
         cv2.waitKey(0)
     return res
 
+def get_masked_skin(img):
+    min_YCrCb = np.array([0, 133, 77], np.uint8)
+    max_YCrCb = np.array([235, 173, 127], np.uint8)
 
+    # Get pointer to video frames from primary device
+    image = img
+    imageYCrCb = cv2.cvtColor(image, cv2.COLOR_BGR2YCR_CB)
+    skinRegionYCrCb = cv2.inRange(imageYCrCb, min_YCrCb, max_YCrCb)
+
+    skinYCrCb = cv2.bitwise_and(image, image, mask=skinRegionYCrCb)
+    if(show):
+        cv2.imshow('skin_detection',skinYCrCb)
+        cv2.waitKey(0)
+
+    skinRegionYCrCb = skinRegionYCrCb != 0
+    masked_rgb = skinYCrCb[skinRegionYCrCb,:]
+    res = np.mean(masked_rgb,axis=0)
+
+    return res
 if __name__ == "__main__":
     landmarks = {
-    'eye' : [36,48,30],
-    'eyebrow'  : [17,27,10],
-    'nose' : [27,36,20],
-    'mouse' : [48,68,30],
-    'face': [0,17,10],
-    'hair': None
+        'eye' : [36,48,30],
+        'eyebrow'  : [17,27,10],
+        'nose' : [27,36,20],
+        'mouse' : [48,68,30],
+        'face': [0,17,10],
+        'hair': None
     }
     ## get input
     img = cv2.imread('./neutral_front/002_03.jpg')
     results = {}
+    target_dir = './good_match'
+    if (not os.path.exists(target_dir)):
+        os.makedirs(target_dir)
+
 
     predictor_path = './shape_predictor_68_face_landmarks.dat'
     faces_folder_path = './neutral_front'
@@ -113,12 +135,11 @@ if __name__ == "__main__":
     predictor = dlib.shape_predictor(predictor_path)
     dets = detector(img, 1)
 
+    skin_rgb = get_masked_skin(img)
+    results['skin_rgb'] = skin_rgb
 
 
 
-    target_dir = './good_match'
-    if(not os.path.exists(target_dir)):
-        os.makedirs(target_dir)
 
 
     for k, d in enumerate(dets):
@@ -198,4 +219,5 @@ if __name__ == "__main__":
             results[landmark] = match_name
             cv2.imwrite(target_file_name,manga_best)
 
-        print("results:",results)
+    print("results:",results)
+    # return results
