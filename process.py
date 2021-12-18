@@ -2,6 +2,7 @@ import copy
 import dlib
 import cv2
 import numpy as np
+from get_hair import get_hair_rgb
 from pathlib import Path
 import os
 
@@ -91,17 +92,40 @@ def match_img(img_face,kp_real, des_real,img_manga,kp_manga, des_manga,descripto
         cv2.waitKey(0)
     return res
 
+def get_masked_skin(img):
+    min_YCrCb = np.array([0, 133, 77], np.uint8)
+    max_YCrCb = np.array([235, 173, 127], np.uint8)
 
+    # Get pointer to video frames from primary device
+    image = img
+    imageYCrCb = cv2.cvtColor(image, cv2.COLOR_BGR2YCR_CB)
+    skinRegionYCrCb = cv2.inRange(imageYCrCb, min_YCrCb, max_YCrCb)
+
+    skinYCrCb = cv2.bitwise_and(image, image, mask=skinRegionYCrCb)
+    if(show):
+        cv2.imshow('skin_detection',skinYCrCb)
+        cv2.waitKey(0)
+
+    skinRegionYCrCb = skinRegionYCrCb != 0
+    masked_rgb = skinYCrCb[skinRegionYCrCb,:]
+    res = np.mean(masked_rgb,axis=0)
+
+    return res
 if __name__ == "__main__":
     landmarks = {
-    'eye' : [36,48,30],
-    'eyebrow'  : [17,27,10],
-    'nose' : [27,36,20],
-    'mouse' : [48,68,30]
-    # 'face': [0,17,10]
+        'eye' : [36,48,30],
+        'eyebrow'  : [17,27,10],
+        'nose' : [27,36,20],
+        'mouse' : [48,68,30],
+        'face': [0,17,10],
+        'hair': None
     }
-
-    img = cv2.imread('./neutral_front/001_03.jpg')
+    ## get input
+    img = cv2.imread('./neutral_front/002_03.jpg')
+    results = {}
+    target_dir = './good_match'
+    if (not os.path.exists(target_dir)):
+        os.makedirs(target_dir)
 
 
     predictor_path = './shape_predictor_68_face_landmarks.dat'
@@ -111,25 +135,32 @@ if __name__ == "__main__":
     predictor = dlib.shape_predictor(predictor_path)
     dets = detector(img, 1)
 
+    skin_rgb = get_masked_skin(img)
+    results['skin_rgb'] = skin_rgb
 
-    target_dir = './good_match'
-    if(not os.path.exists(target_dir)):
-        os.makedirs(target_dir)
+
+
+
 
     for k, d in enumerate(dets):
         # print("Detection {}: Left: {} Top: {} Right: {} Bottom: {}".format(
         #     k, d.left(), d.top(), d.right(), d.bottom()))
         # Get the landmarks/parts for the face in box d.
         shape = predictor(img, d)
-
         for landmark,range_ in landmarks.items():
         # landmark = 'face'
         # range_ = landmarks[landmark]
+            if(landmark != 'hair'):
+                landmark_shape = get_rectangle(shape,range_[0],range_[1],range_[2])
+                landmark_shape_rectangle = dlib.rectangle(left=landmark_shape[0][0],top = landmark_shape[0][1],right=landmark_shape[1][0],bottom=landmark_shape[1][1])
+                landmark_img = img[landmark_shape_rectangle.top():landmark_shape_rectangle.bottom(),landmark_shape_rectangle.left():landmark_shape_rectangle.right()]
             #############
-            landmark_shape = get_rectangle(shape,range_[0],range_[1],range_[2])
-            landmark_shape_rectangle = dlib.rectangle(left=landmark_shape[0][0],top = landmark_shape[0][1],right=landmark_shape[1][0],bottom=landmark_shape[1][1])
-            landmark_img = img[landmark_shape_rectangle.top():landmark_shape_rectangle.bottom(),landmark_shape_rectangle.left():landmark_shape_rectangle.right()]
-            # cv2.rectangle(img,(eyes_shape_rectangle.left(),eyes_shape_rectangle.top()),(eyes_shape_rectangle.right(),eyes_shape_rectangle.bottom()),(0,0,255),2)
+            else:
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                hair_masked = get_hair_rgb(img_rgb)
+                landmark_img = hair_masked
+                landmark_img = cv2.cvtColor(landmark_img,cv2.COLOR_BGR2RGB)
+        # cv2.rectangle(img,(eyes_shape_rectangle.left(),eyes_shape_rectangle.top()),(eyes_shape_rectangle.right(),eyes_shape_rectangle.bottom()),(0,0,255),2)
             #
             # print(eyes_img.shape)
             # landmark_img = cv2.cvtColor(landmark_img, cv2.COLOR_BGR2RGB)
@@ -156,7 +187,8 @@ if __name__ == "__main__":
                     # img_landmark = dlib.load_rgb_image(file_path)
                     img_manga = cv2.imread(os.path.join(material_dir,file))
                     img_manga_base = copy.deepcopy(img_manga)
-                    img_manga = img_manga[300:800,300:600,:]
+                    if(landmark != 'hair'):
+                        img_manga = img_manga[300:800,300:600,:]
 
 
                     res = 0
@@ -183,6 +215,9 @@ if __name__ == "__main__":
                         res_best=res
                         manga_best=img_manga_base
                         match_name = file
-            target_file_name = os.path.join(target_dir,'./{}.jpg'.format(landmark))
-
+            target_file_name = os.path.join(target_dir,'./{}_{}.jpg'.format(landmark,match_name))
+            results[landmark] = match_name
             cv2.imwrite(target_file_name,manga_best)
+
+    print("results:",results)
+    # return results
